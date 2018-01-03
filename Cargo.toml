@@ -1,0 +1,6 @@
+[package]
+name = "bracket2"
+version = "0.0.1-dev"
+authors = ["Christian Sdunek <me@systemcluster.me>"]
+license = "UNLICENSED"
+publish = false

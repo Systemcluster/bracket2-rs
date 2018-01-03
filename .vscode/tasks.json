@@ -1,0 +1,69 @@
+{
+	"version": "2.0.0",
+	"presentation": {
+		"reveal": "always",
+		"panel": "dedicated"
+	},
+	"tasks": [
+		{
+			"label": "check",
+			"type": "process",
+			"command": "cargo",
+			"args": [
+				"check"
+			],
+			"problemMatcher": "$rustc"
+		},
+		{
+			"label": "clippy",
+			"type": "process",
+			"command": "cargo",
+			"args": [
+				"clippy"
+			],
+			"problemMatcher": "$rustc"
+		},
+		{
+			"label": "release",
+			"type": "process",
+			"command": "cargo",
+			"args": [
+				"build",
+				"--release"
+			],
+			"problemMatcher": "$rustc",
+			"group": "build"
+		},
+		{
+			"label": "run",
+			"type": "process",
+			"command": "cargo",
+			"args": [
+				"run"
+			],
+			"problemMatcher": "$rustc",
+			"group": {
+                "kind": "build",
+                "isDefault": true
+            }
+		},
+		{
+			"label": "test",
+			"type": "process",
+			"command": "cargo",
+			"args": [
+				"test"
+			],
+			"group": "test",
+			"problemMatcher": "$rustc"
+		},
+		{
+			"label": "clean",
+			"type": "process",
+			"command": "cargo",
+			"args": [
+				"clean"
+			]
+		}
+	]
+}

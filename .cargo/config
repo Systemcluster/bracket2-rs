@@ -1,0 +1,17 @@
+[target.'cfg(any())']
+rustflags = [
+	"-Zthinlto",
+	"-Ztwo-phase-borrows"
+]
+
+[target.'cfg(target_arch="x86_64")']
+rustflags = [
+	"-Ctarget-cpu=x86-64",
+	"-Ctarget-feature=+crt-static,+64bit,+cmov,+x87,+fxsr,+mmx,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt"
+]
+
+[target.'cfg(debug_assertions)']
+rustflags = [
+	"-Ctarget-cpu=native",
+	"-Ctarget-feature=-crt-static",
+]
