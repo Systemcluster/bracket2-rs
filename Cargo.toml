@@ -4,3 +4,22 @@ version = "0.0.1-dev"
 authors = ["Christian Sdunek <me@systemcluster.me>"]
 license = "UNLICENSED"
 publish = false
+
+[profile.dev]
+opt-level = 0
+lto = false
+panic = "unwind"
+debug = true
+debug-assertions = true
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+debug = false
+debug-assertions = false
+
+[dependencies]
+unicode-segmentation = "1.2.0"
+log = "^0.3"
+simplelog = "0.4.4"

@@ -20,23 +20,22 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
-use std::{
-	vec::Vec,
-	option::Option,
-	boxed::Box
-};
-enum Value {
-	I64(i64)
-}
-struct Sub {
-	value: Value,
-	subs: Vec<Sub>,
-	modifier: Option<Box<Sub>>
-}
+extern crate unicode_segmentation as unicode;
+#[macro_use] extern crate log;
+extern crate simplelog;
+
+mod program;
 
 fn main() {
-	let program = r#"
-		[f[ [[ [[ &0 ] [[1]sub] ] ]] [[f][[ [[[[&2][[0]cmp]]]neg] ]con]] ]]
-		[[2]f]"#;
+	simplelog::TermLogger::init(log::LogLevelFilter::Debug, simplelog::Config::default()).ok();
+
+	let code: String = "
+[f[
+  [[ [[ test &0 ] [[1]sub] ] ]] [[f][[ [[[[&2][[0]cmp]]]neg] ]con]] 
+]]
+[[2]f]".into();
+	let program = program::Program::from_code(&code);
+	
+	println!("{:?}", program);
 }
 
