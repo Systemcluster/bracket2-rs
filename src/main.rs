@@ -1,6 +1,7 @@
 // Bracket2
 // Christian Sdunek, 2018
 
+#![feature(inclusive_range_syntax)] // range syntax additions
 #![feature(target_feature, cfg_target_feature)] // target feature branching
 #![feature(match_default_bindings, match_beginning_vert)] // simplify matching
 #![feature(underscore_lifetimes, in_band_lifetimes, nll, nested_method_call)] // simplify lifetimes
@@ -21,21 +22,26 @@
 #![allow(unused_variables)]
 
 extern crate unicode_segmentation as unicode;
+extern crate regex;
+#[macro_use] extern crate lazy_static;
 #[macro_use] extern crate log;
 extern crate simplelog;
 
 mod program;
+mod result;
 
-fn main() {
+fn main() -> Result<(), result::ParserError> {
 	simplelog::TermLogger::init(log::LogLevelFilter::Debug, simplelog::Config::default()).ok();
 
-	let code: String = "
+	let code: String = r#"
 [f[
-  [[ [[ test &0 ] [[1]sub] ] ]] [[f][[ [[[[&2][[0]cmp]]]neg] ]con]] 
+  [[ [[ test &0 ] [[1]sub] ] ] [[f][[ [[[[&2][[0]cmp]]]neg] ]con]] ]
 ]]
-[[2]f]".into();
-	let program = program::Program::from_code(&code);
+[[2]f]"#.into();
+	let program = program::Program::from_code(&code)?;
 	
-	println!("{:?}", program);
+	println!("{}", &program.tree(1));
+
+	Ok(())
 }
 

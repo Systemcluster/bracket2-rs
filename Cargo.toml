@@ -23,3 +23,5 @@ debug-assertions = false
 unicode-segmentation = "1.2.0"
 log = "^0.3"
 simplelog = "0.4.4"
+regex = "0.2.5"
+lazy_static = "1.0.0"

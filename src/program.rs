@@ -6,39 +6,11 @@ use std::boxed::Box;
 use std::string::String;
 use std::default::Default;
 use std::result::Result;
-use std::error;
-use std::fmt;
 use unicode::UnicodeSegmentation;
+use regex::Regex;
 use log;
 
-
-#[derive(Debug)]
-pub struct ParserSuccess {
-	sub: usize,
-	index: usize,
-	line: usize,
-	lineindex: usize,
-}
-#[derive(Debug)]
-pub struct ParserError {
-	description: String,
-	index: usize,
-	line: usize,
-	lineindex: usize,
-}
-impl ParserError {
-	fn new(index: usize, line: usize, lineindex: usize, description: String) -> ParserError {
-		ParserError {index, line, lineindex, description}
-	}
-}
-impl fmt::Display for ParserError {
-	fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result { 
-		write!(formatter, "ParserError on line {}:{}: {}", self.line, self.lineindex, self.description) 
-	}
-}
-impl error::Error for ParserError {
-	fn description(&self) -> &str { &self.description }
-}
+use result::*;
 pub type ParserResult = Result<ParserSuccess, ParserError>;
 pub type ProgramResult = Result<Program, ParserError>;
 
@@ -47,7 +19,9 @@ enum Value {
 	Sub(usize),
 	SubLink(usize),
 	SubName(String),
-	I64(i64)
+	I64(i64),
+	F64(f64),
+	String(String)
 }
 #[derive(Debug, Default)]
 struct Sub {
@@ -66,17 +40,89 @@ pub struct Program {
 }
 impl Program {
 	pub fn from_code(code: &str) -> ProgramResult {
-		let code = format!("[![{}]]", code);
+		// wrap code in single sub for easier parsing
+		let code = format!("[[\n{}\n]]", code);
 		let subs = {
 			let mut parser = Parser::default();
 			parser.code = code.graphemes(true).collect();
-			parser.parse(0, 0, 0, None).map_err(|e|e)?;
+			parser.parse(0, 0, 0, None).map_err(|mut e|{
+				// adjust parse index for added wrapper
+				e.index -= 3; e.line -= 1; e
+			})?;
 			parser.subs
 		};
 		Ok(Program { subs: subs })
 	}
 	pub fn run() {
 		unimplemented!();
+	}
+	pub fn tree(&self, stride: usize) -> String {
+		self.subtree(0, 1, stride)
+	}
+
+	// generate a tree-visualization of the program
+	fn subtree(&self, index: usize, depth: usize, stride: usize) -> String {
+		let mut s = String::new();
+		let sub = &self.subs[index];
+		s.push_str("- sub");
+		if sub.name.len() > 0 {
+			s.push_str(" (");
+			s.push_str(&sub.name);
+			s.push_str(")");
+		}
+		s.push('\n');
+		let do_match = |child: &Value| -> String {
+			let mut s = String::new();
+			match child {
+				Value::Sub(i) => {
+					s.push_str(&self.subtree(*i, depth+1, stride));
+				}
+				Value::SubName(n) => {
+					s.push_str("-> (");
+					s.push_str(n);
+					s.push(')');
+				}
+				Value::SubLink(i) => {
+					s.push_str("-> ");
+					s.push_str(&format!("&{}", i));
+				}
+				Value::I64(i) => {
+					s.push_str(&format!("_ {}", i));
+				}
+				Value::F64(f) => {
+					s.push_str(&format!("_ {}", f));
+				}
+				_ => {
+					unimplemented!();
+				}
+			}
+			s
+		};
+		let do_indent = |s: &mut String| {
+			for i in 0..depth {
+				s.push('|');
+				for i in 0..stride {
+					s.push(' ');
+				}
+			}
+		};
+		if sub.subs.len() > 0 {
+			do_indent(&mut s);
+			s.push_str("subs:");
+			for child in &sub.subs {
+				s.push('\n');
+				do_indent(&mut s);
+				s.push_str(&do_match(&child));
+			}
+		}
+		if let Some(modf) = &sub.modf {
+			s.push('\n');
+			do_indent(&mut s);
+			s.push_str("mod:\n");
+			do_indent(&mut s);
+			s.push_str(&do_match(&modf));
+		}
+		s
 	}
 }
 
@@ -90,9 +136,34 @@ pub struct Parser<'a> {
 	code: Vec<&'a str>
 }
 impl<'a> Parser<'a> {
-	// todo: resolve sub names
+	fn resolve_token(&mut self, token: &str) -> Value {
+		lazy_static!{
+			static ref SUBLINK: Regex = Regex::new(r"^&([0-9]*)$").unwrap();
+			static ref INTEGER: Regex = Regex::new(r"^([0-9]+)$").unwrap();
+			static ref FLOATP: Regex = Regex::new(r"^([0-9]+\.[0-9]+)$").unwrap();
+		}
+		if SUBLINK.is_match(token) {
+			let cap = SUBLINK.captures(token).unwrap();
+			if cap[1].len() > 0 {
+				return Value::SubLink(0);
+			}
+			else {
+				return Value::SubLink(cap[1].parse::<usize>().unwrap())
+			}
+		}
+		if INTEGER.is_match(token) {
+			let cap = INTEGER.captures(token).unwrap();
+			return Value::I64(cap[1].parse::<i64>().unwrap())
+		}
+		if FLOATP.is_match(token) {
+			let cap = FLOATP.captures(token).unwrap();
+			return Value::F64(cap[1].parse::<f64>().unwrap())
+		}
+		Value::SubName(token.into())
+	}
 
-	fn parse(&mut self, mut index: usize, mut line: usize, mut lineindex: usize, parent: Option<usize>) -> ParserResult {
+	fn parse(&mut self, mut index: usize, mut line: usize, mut lineindex: usize, parent: Option<usize>) 
+	-> ParserResult {
 		debug!("- starting sub at position {}", index);
 		let mut current = Sub::new();
 		current.parent = parent;
@@ -103,107 +174,103 @@ impl<'a> Parser<'a> {
 		let mut ename = String::new();
 
 		while index < self.code.len() && state != State::End {
-			match (&state.clone(), self.code[index], ename.len()) {
-				(_,  " ", 0) | 
-				(_, "\t", 0) | 
-				(_, "\n", 0) | 
-				(_, "\r", 0) => {
-					// ignore unnecessary whitespace 
-				}
-				(State::None,    "[", _) => { state = State::SubOpen; }
-				(State::None,     _ , _) => { unreachable!(); }
-				(State::SubOpen, "[", _) |
-				(State::NameEnd, "[", _) => { state = State::Sub; }
-				(State::SubName, "[", _) => {
+			match (&state.clone(), self.code[index]) {
+				(_,  " ") if ename.len() == 0 => {}
+				(_, "\t") if ename.len() == 0 => {} 
+				(_, "\n") if ename.len() == 0 => {} 
+				(_, "\r") if ename.len() == 0 => {}
+				(State::None,    "[") => { state = State::SubOpen; }
+				(State::None,     _ ) => { unreachable!(); }
+				(State::SubOpen, "[") |
+				(State::NameEnd, "[") => { state = State::Sub; }
+				(State::SubName, "[") => {
 					debug!("  name: {}", ename);
 					self.subs[current].name = ename;
 					state = State::Sub;
 					ename = "".into();
 				}
-				(State::SubOpen, "]", _) |
-				(State::SubName, "]", _) |
-				(State::NameEnd, "]", _) => {
+				(State::SubOpen, "]") |
+				(State::SubName, "]") |
+				(State::NameEnd, "]") => {
 					return Err(ParserError::new(index, line, lineindex, format!(
 						"expected sub after sub open, found ']' at index {}", index)));
 				}
-				(State::SubOpen,  s , _) => {
+				(State::SubOpen,  s ) => {
 					state = State::SubName;
 					ename = s.into();
 				}
-				(State::SubName,  s , _) => { 
+				(State::SubName,  s ) => { 
 					ename.push_str(s); 
 				}
-				(State::NameEnd,  s , _) => {
+				(State::NameEnd,  s ) => {
 					return Err(ParserError::new(index, line, lineindex, format!(
-						"expected sub after sub open, found '{}' at index {}", s, index)));
+						"expected sub after sub name, found '{}' at index {}", s, index)));
 				}
-				(State::Sub,     "]", _) => {
+				(State::Sub,     "]") => {
 					state = State::Mod;
 				}
-				(State::Sub,     "[", _) => {
+				(State::Sub,     "[") => {
 					let child = self.parse(index, line, lineindex, Some(current))?;
 					index = child.index - 1;
 					self.subs[current].subs.push(Value::Sub(child.sub));
 				}
-				(State::Sub,      s , _) => {
+				(State::Sub,      s ) => {
 					// step back to parse tokens & literals
 					state = State::SubVal;
 					index = index - 1;
 				}
-				(State::SubVal,  " ", _) |
-				(State::SubVal, "\t", _) |
-				(State::SubVal, "\n", _) |
-				(State::SubVal, "\r", _) |
-				(State::SubVal,  "[", _) |
-				(State::SubVal,  "]", _) => {
+				(State::SubVal,  " ") |
+				(State::SubVal, "\t") |
+				(State::SubVal, "\n") |
+				(State::SubVal, "\r") |
+				(State::SubVal,  "[") |
+				(State::SubVal,  "]") => {
 					// end token & literals parsing and step back
 					debug!("  found token/literal '{}' at position {}", ename, index);
 					state = State::Sub;
-					let mut child = Sub::new();
-					child.parent = Some(current);
-					child.subs.push(Value::SubName(ename));
+					self.subs[current].subs.push(self.resolve_token(&ename));
 					ename = "".into();
 					index = index - 1;
 				}
-				(State::SubVal,   s , _) => {
+				(State::SubVal,   s ) => {
 					ename.push_str(s);
 				}
-				(State::Mod,     "[", _) => {
+				(State::Mod,     "[") => {
 					state = State::ModEnd;
 					let child = self.parse(index, line, lineindex, parent)?;
 					index = child.index - 1;
 					self.subs[current].modf = Some(Value::Sub(child.sub));
 				}
-				(State::Mod,     "]", _) => { state = State::End;}
-				(State::Mod,      s , _) => {
+				(State::Mod,     "]") => { state = State::End;}
+				(State::Mod,      s ) => {
 					state = State::ModName;
 					ename = s.into();
 				}
-				(State::ModName,  " ", _) |
-				(State::ModName, "\t", _) |
-				(State::ModName, "\n", _) |
-				(State::ModName, "\r", _) |
-				(State::ModName, "]", _) => {
+				(State::ModName,  " ") |
+				(State::ModName, "\t") |
+				(State::ModName, "\n") |
+				(State::ModName, "\r") |
+				(State::ModName, "]") => {
 					// end mod name parsing and step back
 					state = State::ModEnd;
 					debug!("  mod: {} at position {}", ename, index);
-					self.subs[current].modf = Some(Value::SubName(ename));
+					self.subs[current].modf = Some(self.resolve_token(&ename));
 					ename = "".into();
 					index = index - 1;
 				}
-				(State::ModName, "[", _) => {
+				(State::ModName, "[") => {
 					return Err(ParserError::new(index, line, lineindex, format!(
 						"expected sub end after mod name, found '[' at index {}", index)));
 				}
-				(State::ModName,  s , _) => {
+				(State::ModName,  s ) => {
 					ename.push_str(s);
 				}
-				(State::ModEnd,  "]", _) => { state = State::End; }
-				(State::ModEnd,   s , _) => {
+				(State::ModEnd,  "]") => { state = State::End; }
+				(State::ModEnd,   s ) => {
 					return Err(ParserError::new(index, line, lineindex, format!(
 						"expected sub end after mod, found '{}' at index {}", s, index)));
 				}
-				(State::End,       _, _) => { unreachable!(); }
+				(State::End,       _) => { unreachable!(); }
 			}
 			
 			lineindex += 1;
