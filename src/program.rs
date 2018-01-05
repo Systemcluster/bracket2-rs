@@ -136,7 +136,7 @@ pub struct Parser<'a> {
 	code: Vec<&'a str>
 }
 impl<'a> Parser<'a> {
-	fn resolve_token(&mut self, token: &str) -> Value {
+	fn resolve_token(&self, token: &str) -> Value {
 		lazy_static!{
 			static ref SUBLINK: Regex = Regex::new(r"^&([0-9]*)$").unwrap();
 			static ref INTEGER: Regex = Regex::new(r"^([0-9]+)$").unwrap();
@@ -228,7 +228,8 @@ impl<'a> Parser<'a> {
 					// end token & literals parsing and step back
 					debug!("  found token/literal '{}' at position {}", ename, index);
 					state = State::Sub;
-					self.subs[current].subs.push(self.resolve_token(&ename));
+					let value = self.resolve_token(&ename);
+					self.subs[current].subs.push(value);
 					ename = "".into();
 					index = index - 1;
 				}
@@ -254,7 +255,8 @@ impl<'a> Parser<'a> {
 					// end mod name parsing and step back
 					state = State::ModEnd;
 					debug!("  mod: {} at position {}", ename, index);
-					self.subs[current].modf = Some(self.resolve_token(&ename));
+					let value = self.resolve_token(&ename);
+					self.subs[current].modf = Some(value);
 					ename = "".into();
 					index = index - 1;
 				}
